@@ -83,8 +83,8 @@ Dual-core FreeRTOS on ESP32-S3. Tasks are pinned to specific cores:
 
 - `protocol.py` — packed struct definitions for the UDP wire format (telemetry, commands, camera preview)
 - `camera_stream.py` — live camera viewer (`--esp-ip`, `--fps`, `--quality`)
-- `apriltag_host.py` + `apriltag_host_shim.c` — ctypes binding to `components/esp-apriltag` compiled for the laptop (cached in `laptop/.apriltag-host/`), so laptop-side detections carry firmware semantics: same code table, same decision-margin scale (3.4.5 computes it after `decode_sharpening`; a pip AprilTag does not), same gate, same pose
-- `tag_stream.py` — `camera_stream.py` plus AprilTags, kept short for students: detects on every frame with `apriltag_host.py` and draws an outline, id and range per accepted tag
+- `apriltag_host.py` + `apriltag_host_shim.c` — ctypes binding to `components/esp-apriltag` compiled for the laptop (cached in `laptop/.apriltag-host/`), so laptop-side detections carry firmware semantics: same code table, same decision-margin scale (3.4.5 computes it after `decode_sharpening`; a pip AprilTag does not), same gate, same pose; `Detection.t_body` / `R_body` give the pose in the drone frame (camera mount: `CAM_PITCH_DEG`, `CAM_POS_M`)
+- `tag_stream.py` — `camera_stream.py` plus AprilTags, kept short for students: detects on every frame with `apriltag_host.py` and draws an outline, id and drone-frame position (`t_body`) per accepted tag
 - `tag_stream_legacy.py` — the full tuning viewer: `--detail` adds the gate's rejects, the HUD and the drone's own `:5008` detections, which lag the video by ~1 s
 - `comms.py` — `CommsNode` class: UDP send/recv, drone IP discovery, nav-tag broadcast, peer position relay
 - `exploration.py` — `ExplorationDirector`: picks least-explored VFH gap, scores by crumb density + heading continuity + peer goal repulsion

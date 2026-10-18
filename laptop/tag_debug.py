@@ -50,15 +50,12 @@ import time
 from collections import deque
 from pathlib import Path
 
+from apriltag_host import camera_to_body
 from protocol import AT_DEBUG_PORT, parse_at_debug, parse_telemetry
 
 TELEM_PORT     = 5005
 LINK_TIMEOUT_S = 1.5    # no debug packet for this long → link down
 FRAME_STALL_S  = 2.5    # packets arrive but frame_ms frozen → camera stalled
-
-# Camera mount: pitched 45° nose-down, 2 cm ahead of centre
-CAM_PITCH_DEG    = 45.0
-CAM_FWD_OFFSET_M = 0.02
 
 # Firmware keeps a tag pose (telemetry tag_dist_m) only when reprojection
 # error < 0.5 (at_detect.c); no pose ever affects flight.
@@ -66,11 +63,9 @@ POSE_ERR_LIMIT = 0.5
 
 
 def cam_to_body(tx: float, ty: float, tz: float) -> tuple:
-    """Camera-frame translation → body-frame (fwd, right, hdist).
-    The 45°-pitched camera transform, without the heading rotation."""
-    pitch = math.radians(CAM_PITCH_DEG)
-    fwd   = math.cos(pitch) * tz + math.sin(pitch) * ty + CAM_FWD_OFFSET_M
-    right = tx
+    """Camera-frame translation → drone frame (fwd, right, horizontal dist).
+    Mount in apriltag_host.py (CAM_PITCH_DEG); no heading rotation."""
+    fwd, right, _ = camera_to_body((tx, ty, tz))
     return fwd, right, math.hypot(fwd, right)
 
 

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import ctypes
 import hashlib
+import math
 import os
 import platform
 import shutil
@@ -91,6 +92,36 @@ PIXEL_CENTRE_OFFSET = 0.5
 EXPECTED_NCODES = 22
 
 MAX_DETECTIONS = 32     # per frame; extras are counted, not returned
+
+# ---------------------------------------------------------------------------
+# Camera mount on the drone
+# ---------------------------------------------------------------------------
+
+# Drone (body) frame: x forward, y right, z down, origin at the drone centre.
+# Camera frame (AprilTag pose): x image right, y image down, z out of the lens.
+CAM_PITCH_DEG = 45.0                # lens looks forward, tilted 45° down
+CAM_POS_M     = (0.02, 0.0, 0.0)    # lens position in the drone frame
+
+_P = math.radians(CAM_PITCH_DEG)
+# Columns are the camera's x, y, z axes written in the drone frame.
+R_BODY_CAM = ((0.0, -math.sin(_P), math.cos(_P)),
+              (1.0,  0.0,          0.0),
+              (0.0,  math.cos(_P), math.sin(_P)))
+
+
+def camera_to_body(t: tuple[float, float, float]) -> tuple[float, float, float]:
+    """Move a camera-frame point into the drone frame.
+
+    Args:
+        t: (x, y, z) in the camera frame, metres.
+    Returns:
+        (forward, right, down) from the drone centre, metres.
+
+    Example: a tag 1 m ahead of and 0.5 m below the lens is seen at
+    t = (0, -0.354, 1.061) and comes back as (1.02, 0.0, 0.5).
+    """
+    return tuple(sum(R_BODY_CAM[i][j] * t[j] for j in range(3)) + CAM_POS_M[i]
+                 for i in range(3))
 
 # ---------------------------------------------------------------------------
 # Build
@@ -354,6 +385,23 @@ class Detection:
         if self.t is None:
             return None
         return (self.t[0] ** 2 + self.t[1] ** 2 + self.t[2] ** 2) ** 0.5
+
+    @property
+    def t_body(self) -> tuple[float, float, float] | None:
+        """Tag centre in the drone frame (forward, right, down), metres, or
+        None without a pose."""
+        if self.t is None:
+            return None
+        return camera_to_body(self.t)
+
+    @property
+    def R_body(self) -> tuple[float, ...] | None:
+        """Tag orientation in the drone frame (9, row-major), or None without
+        a pose. Column j is the tag's axis j in drone coordinates."""
+        if self.R is None:
+            return None
+        return tuple(sum(R_BODY_CAM[i][k] * self.R[3 * k + j] for k in range(3))
+                     for i in range(3) for j in range(3))
 
 
 def gate_reason(det: Detection, min_margin: float = GATE_MIN_MARGIN,
