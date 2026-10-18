@@ -5,7 +5,8 @@
 
 Each frame is checked for tags on the laptop, with the same detector code the
 drone runs. Every tag the drone would accept gets a green outline, its id and
-its distance from the camera. Keys: q or Esc quit, s save a picture.
+where it is from the drone centre (forward, right, down, metres; camera mount
+in apriltag_host.py). Keys: q or Esc quit, s save a picture.
 
 For tuning (rejected tags, the drone's own detections, HUD) use
 tag_stream_legacy.py.
@@ -38,15 +39,18 @@ def to_view(x, y, scale):
 
 
 def draw_tag(view, det, scale):
-    """Green outline, plus "id  distance" just above the tag."""
+    """Green outline, plus e.g. "5  fwd 1.02 right +0.10 down 0.50 m" above it."""
     pts = [to_view(x, y, scale) for x, y in det.corners]
     cv2.polylines(view, [np.array(pts, np.int32)], True, GREEN, 2, cv2.LINE_AA)
 
     label = str(det.id)
-    if det.range_m is not None:
-        label += f"  {det.range_m:.2f} m"
-    x = min(p[0] for p in pts)
-    y = max(15, min(p[1] for p in pts) - 6)     # keep it inside the window
+    if det.t_body is not None:
+        fwd, right, down = det.t_body
+        label += f"  fwd {fwd:.2f} right {right:+.2f} down {down:.2f} m"
+    # Keep the whole label inside the window.
+    (text_w, _), _ = cv2.getTextSize(label, FONT, 0.5, 3)
+    x = max(0, min(min(p[0] for p in pts), view.shape[1] - text_w))
+    y = max(15, min(p[1] for p in pts) - 6)
     cv2.putText(view, label, (x, y), FONT, 0.5, BLACK, 3, cv2.LINE_AA)  # outline
     cv2.putText(view, label, (x, y), FONT, 0.5, GREEN, 1, cv2.LINE_AA)
 
