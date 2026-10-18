@@ -1,4 +1,4 @@
-"""tag_stream.py logic: ESP overlay state, labelling, drawing, CLI.
+"""tag_stream_legacy.py logic: ESP overlay state, labelling, drawing, CLI.
 
 No sockets and no window — everything here is the pure part of the viewer.
 AT-debug packets are packed from struct below, pinned to main/wifi_task.h the
@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 cv2 = pytest.importorskip("cv2")
 np = pytest.importorskip("numpy")
 
-import tag_stream
+import tag_stream_legacy
 from apriltag_host import (
     GATE_MAX_HAMMING,
     GATE_MIN_MARGIN,
@@ -25,7 +25,7 @@ from apriltag_host import (
 )
 from protocol import parse_at_debug
 from tag_debug import FRAME_STALL_S, LINK_TIMEOUT_S
-from tag_stream import (
+from tag_stream_legacy import (
     EspMarker,
     EspOverlay,
     annotate,
@@ -420,19 +420,19 @@ def test_the_hud_is_complete_at_scale_1():
     lines = hud_for(n_rejected=2,
                     esp_status="esp 1.4 fps 620 ms/frame  lag 1.1s  latched none")
     width = 320
-    scale = tag_stream._hud_scale(lines, width)
-    assert scale == tag_stream.MIN_TEXT_SCALE
-    assert cv2.getTextSize(lines[1], tag_stream.FONT, scale,
+    scale = tag_stream_legacy._hud_scale(lines, width)
+    assert scale == tag_stream_legacy.MIN_TEXT_SCALE
+    assert cv2.getTextSize(lines[1], tag_stream_legacy.FONT, scale,
                            1)[0][0] > width - 12
 
-    wrapped = tag_stream._hud_wrap(lines, width, scale)
+    wrapped = tag_stream_legacy._hud_wrap(lines, width, scale)
     assert len(wrapped) == len(lines) + 1
     # Wrapped, not truncated: every word survives, only the separator at the
     # break is spent on the line break.
     assert " ".join(wrapped).split() == " ".join(lines).split()
     assert wrapped[-2].endswith("rejected)")
     for line in wrapped:
-        assert cv2.getTextSize(line, tag_stream.FONT, scale,
+        assert cv2.getTextSize(line, tag_stream_legacy.FONT, scale,
                                1)[0][0] <= width - 12
 
     view = blank()
@@ -517,11 +517,11 @@ def test_esp_ip_is_resolved_to_a_numeric_address():
 def test_reuses_camera_stream_and_tag_debug_rather_than_copying():
     import camera_stream
     import tag_debug
-    assert tag_stream.FrameAssembler is camera_stream.FrameAssembler
-    assert tag_stream.drain_socket is camera_stream.drain_socket
-    assert tag_stream.KEEPALIVE_S is camera_stream.KEEPALIVE_S
-    assert tag_stream.COMMAND_PORT is camera_stream.COMMAND_PORT
-    assert tag_stream.load_nav_tag_ids is tag_debug.load_nav_tag_ids
+    assert tag_stream_legacy.FrameAssembler is camera_stream.FrameAssembler
+    assert tag_stream_legacy.drain_socket is camera_stream.drain_socket
+    assert tag_stream_legacy.KEEPALIVE_S is camera_stream.KEEPALIVE_S
+    assert tag_stream_legacy.COMMAND_PORT is camera_stream.COMMAND_PORT
+    assert tag_stream_legacy.load_nav_tag_ids is tag_debug.load_nav_tag_ids
 
 
 def test_wrapping_keeps_the_double_spaces_between_hud_fields():
@@ -529,11 +529,11 @@ def test_wrapping_keeps_the_double_spaces_between_hud_fields():
     # one of each pair, so a wrapped line would silently reflow.
     line = "aaaa bbbb  cccc dddd"
     scale = 0.4
-    wide = cv2.getTextSize(line, tag_stream.FONT, scale, 1)[0][0] + 20
-    assert tag_stream._hud_wrap([line], wide, scale) == [line]
-    narrow = cv2.getTextSize("aaaa bbbb  cccc", tag_stream.FONT,
+    wide = cv2.getTextSize(line, tag_stream_legacy.FONT, scale, 1)[0][0] + 20
+    assert tag_stream_legacy._hud_wrap([line], wide, scale) == [line]
+    narrow = cv2.getTextSize("aaaa bbbb  cccc", tag_stream_legacy.FONT,
                              scale, 1)[0][0] + 12
-    assert tag_stream._hud_wrap([line], narrow, scale) == ["aaaa bbbb  cccc",
+    assert tag_stream_legacy._hud_wrap([line], narrow, scale) == ["aaaa bbbb  cccc",
                                                            "dddd"]
 
 
@@ -542,9 +542,9 @@ def test_a_label_slid_left_to_fit_does_not_bury_an_earlier_one():
     # drop it onto one already drawn.
     view = blank()
     taken = []
-    tag_stream._text(view, "tag 5 m210 h0 1.02m", 150, 100, (0, 255, 0),
+    tag_stream_legacy._text(view, "tag 5 m210 h0 1.02m", 150, 100, (0, 255, 0),
                      0.4, taken=taken)
-    tag_stream._text(view, "tag 12? [nav] m0.4 h2 hamming>1", 600, 100,
+    tag_stream_legacy._text(view, "tag 12? [nav] m0.4 h2 hamming>1", 600, 100,
                      (150, 150, 150), 0.4, taken=taken)
     first, second = taken
     assert second[1] >= first[3]            # pushed onto its own row
@@ -555,16 +555,16 @@ def test_visible_markers_filters_the_picture_only():
     good = EspMarker(5, 148.0, 191.0, 1.1, True, 206.0, 0, 3e-07)
     bad = EspMarker(17, 40.0, 30.0, 1.1, False, 3.0, 2, -1.0)
     markers = [good, bad]
-    assert tag_stream.visible_markers(markers, True, True) == markers
-    assert tag_stream.visible_markers(markers, True, False) == [good]
-    assert tag_stream.visible_markers(markers, False, True) == []
+    assert tag_stream_legacy.visible_markers(markers, True, True) == markers
+    assert tag_stream_legacy.visible_markers(markers, True, False) == [good]
+    assert tag_stream_legacy.visible_markers(markers, False, True) == []
 
 
 def test_png_name_numbers_by_run_not_by_frame_id():
     # frame_id restarts when the drone reboots mid-recording; run numbering
     # does not, so a recording never overwrites its own earlier frames.
-    assert tag_stream.png_name(1) == "tag_stream_000001.png"
-    assert len({tag_stream.png_name(n) for n in range(5)}) == 5
+    assert tag_stream_legacy.png_name(1) == "tag_stream_000001.png"
+    assert len({tag_stream_legacy.png_name(n) for n in range(5)}) == 5
 
 
 def test_esp_record_keeps_the_drone_s_tiny_pose_errors():

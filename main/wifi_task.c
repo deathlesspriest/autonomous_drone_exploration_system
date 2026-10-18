@@ -359,7 +359,7 @@ void wifi_task(void *arg)
 
     /* AprilTag debug send socket.  These small packets always go to the
      * configured host and are also copied to a remote active camera viewer,
-     * which gives tag_stream.py --detail its ESP overlay. */
+     * which gives tag_stream_legacy.py --detail its ESP overlay. */
     int at_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
     configASSERT(at_sock >= 0);
     struct sockaddr_in at_dest = {

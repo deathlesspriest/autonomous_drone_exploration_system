@@ -280,7 +280,7 @@ def test_a_hamming_1_tag_passes_the_gate_and_is_posed(detector, dictionary):
 
 
 def test_custom_parameters_reach_the_detector(dictionary):
-    """The CLI can override the firmware's parameters (tag_stream --decimate)."""
+    """The CLI can override the firmware's parameters (tag_stream_legacy --decimate)."""
     params = DetectorParams(quad_decimate=1.0)
     with Detector(params) as det:
         assert det.params.quad_decimate == 1.0
@@ -385,7 +385,7 @@ def test_detect_rejects_anything_but_a_contiguous_uint8_image(detector):
 def test_detect_leaves_the_caller_s_image_alone(dictionary, params):
     """apriltag.c only copies the image for the decimate step (quad_decimate >
     1); at 1.0 the quad_sigma blur lands in the caller's buffer, so
-    `tag_stream.py --decimate 1.0` would display and save a blurred frame."""
+    `tag_stream_legacy.py --decimate 1.0` would display and save a blurred frame."""
     img = render(dictionary, 5)
     before = img.copy()
     with Detector(params) as det:
