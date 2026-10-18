@@ -154,8 +154,8 @@ The drones send MAVLink, telemetry, and ToF debug data to
 mission laptop must hold that address on the drone Wi-Fi. Camera video follows
 the source IP of the latest `camera_stream.py` or `tag_stream.py` keepalive and
 can therefore be viewed from another laptop on the same Wi-Fi. The small
-AprilTag debug stream is also copied to that viewer when `tag_stream.py` uses
-`--detail`.
+AprilTag debug stream is also copied to that viewer when
+`tag_stream_legacy.py` uses `--detail`.
 
 ## 3. ESP32 camera preview
 
@@ -169,10 +169,11 @@ python3 laptop/camera_stream.py --esp-ip 192.168.1.222 [--fps 10] [--quality 60]
 
 With AprilTags drawn on the frame:
 ```bash
-python3 laptop/tag_stream.py --esp-ip 192.168.1.222 [--detail]
+python3 laptop/tag_stream.py --esp-ip 192.168.1.222
 ```
 
-`--detail`, or `d` while it runs, adds the tuning layers.
+For tuning, use `tag_stream_legacy.py --detail` (or `d` while it runs): it adds
+rejected tags, a HUD and the drone's own detections.
 
 For both commands, `q`/Esc quits. The drone streams only while the viewer
 runs (~9 fps, ~130 ms from capture to the laptop on the OV3660). The overlay
