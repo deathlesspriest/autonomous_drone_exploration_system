@@ -199,7 +199,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--drone-id', type=int, required=True)
     ap.add_argument('--esp-ip')
-    ap.add_argument('--waypoints-file', type=Path, default=ROOT/'waypoints/method1_test.txt')
+    ap.add_argument('--waypoints-file', type=Path, default=ROOT/'waypoints/cde1302_sweep_draft.txt')
     # CHANGED FROM GITHUB: 40 s per goal instead of the upstream default 25 s.
     ap.add_argument('--arrival-timeout', type=float, default=40.0)
     # PROJECT ADDITION: record location and measured downward-camera mounting.
