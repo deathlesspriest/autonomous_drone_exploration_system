@@ -1,0 +1,5 @@
+# PROJECT ADDITION: small integration route, not full search coverage.
+# Requires verified zero home, local axes and clear lab space.
+0.50,0.00
+0.50,0.50
+0.00,0.00
