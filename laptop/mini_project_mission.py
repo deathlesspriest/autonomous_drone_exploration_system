@@ -52,6 +52,12 @@ class CommandLink:
     def __init__(self, drone_id, esp_ip, encode):
         self.drone_id, self.target, self.encode = drone_id, (esp_ip, 5006), encode
 
+    # PROJECT ADDITION: same checked transport for raw Lab 5 trajectory packets.
+    def send_raw(self, payload):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            if sock.sendto(payload, self.target) != len(payload):
+                raise OSError('Incomplete UDP trajectory send')
+
     def send_command(self, drone_id, command):
         if drone_id != self.drone_id:
             return False
@@ -151,6 +157,12 @@ class Flight:
             raise MissionAbort('All LAND send attempts failed')
 
     # PROJECT ADDITION: connect the full sequence and gate normal LAND on fresh home telemetry.
+    def follow_route(self, route):
+        # REUSED FROM METHOD 1: waypoint execution stays unchanged.
+        for i, (x, y) in enumerate(route, 1):
+            self.goto(x, y, i)
+            self.pause(0.5)
+
     def run(self, route):
         try:
             p = self.healthy()
@@ -163,9 +175,7 @@ class Flight:
             self.rec.event('TAKEOFF_COMMAND_SENT')
             self.collecting.set()
             self.pause(getattr(self.args, 'takeoff_wait', 10.0))  # same timed takeoff wait as course script; not altitude feedback
-            for i, (x, y) in enumerate(route, 1):
-                self.goto(x, y, i)
-                self.pause(0.5)
+            self.follow_route(route)  # PROJECT ADDITION: Method 2 overrides only motion.
             # CHANGED FROM GITHUB: do not call a timed-out home waypoint a successful return.
             require_home(self.healthy(), time.monotonic())
             self.rec.event('HOME_POSITION_VERIFIED', radius_m=0.25)
@@ -195,11 +205,16 @@ class Flight:
 
 
 # PROJECT ADDITION: unified entry point; camera starts before a single M-key start.
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
+def main(flight_class=Flight, trajectory_mode=False):
+    ap = argparse.ArgumentParser(description=("Method 2: trajectory flight with shared camera, localization and recording" if trajectory_mode else __doc__))
     ap.add_argument('--drone-id', type=int, required=True)
     ap.add_argument('--esp-ip')
-    ap.add_argument('--waypoints-file', type=Path, default=ROOT/'waypoints/cde1302_sweep_draft.txt')
+    # PROJECT ADDITION: separate entry points share the same camera and records.
+    if trajectory_mode:
+        ap.add_argument('--trajectory', type=Path, default=ROOT/'trajectory/cde1302_sweep_draft.csv')
+        ap.add_argument('--dt', type=float, default=0.1)
+    else:
+        ap.add_argument('--waypoints-file', type=Path, default=ROOT/'waypoints/cde1302_sweep_draft.txt')
     # CHANGED FROM GITHUB: 40 s per goal instead of the upstream default 25 s.
     ap.add_argument('--arrival-timeout', type=float, default=40.0)
     # PROJECT ADDITION: record location and measured downward-camera mounting.
@@ -215,9 +230,9 @@ def main():
         ap.error('Arrival timeout must be finite and positive')
     if not all(math.isfinite(v) for v in [args.tag_size_m,args.takeoff_wait,args.camera_rotation_deg,*args.camera_offset]) or args.tag_size_m<=0 or args.takeoff_wait<=0:
         ap.error('Camera values must be finite; tag size and takeoff wait must be positive')
-    route = load_route(args.waypoints_file)
+    route = flight_class.load_trajectory(args) if trajectory_mode else load_route(args.waypoints_file)
     args.esp_ip = args.esp_ip or f'192.168.1.{200+args.drone_id}'
-    print(f'{len(route)} waypoints; home=(0,0); ESP={args.esp_ip}')
+    print(f"Method {'2 trajectory' if trajectory_mode else '1 waypoint'}; home=(0,0); ESP={args.esp_ip}")
     print('Check actual PX4 axes and origin against the draft route before flight.')
     # REUSED FROM GITHUB (unchanged): detector, frame assembly, telemetry, packet
     # encoding, and tag drawing. New integration logic surrounds these imports.
@@ -243,7 +258,7 @@ def main():
     print(f'Logs: {rec.directory}')
     poses, stop = PoseHistory(), threading.Event()
     state_lock = threading.Lock()
-    state = dict(camera_time=0.0, nav=None, source=None)
+    state = dict(camera_time=0.0, nav=None, nav_time=0.0, source=None)
 
     # PROJECT ADDITION: timestamp and buffer this drone's x/y/yaw for tag mapping.
     def on_telemetry(packet, source):
@@ -251,6 +266,7 @@ def main():
             poses.add(Pose(time.monotonic(), packet.ned_x, packet.ned_y, packet.heading_rad))
             with state_lock:
                 state['nav'], state['source'] = packet.nav_state, source
+                state['nav_time'] = time.monotonic()
 
     # PROJECT ADDITION: share camera freshness with the flight worker.
     def camera_age():
@@ -267,9 +283,14 @@ def main():
     comms = CommsNode(listen_port=5005, cmd_port=5006, config_path=None)
     comms.set_nav_tags([], {})  # zero map offset; does NOT reset PX4's local origin
     comms.on_telemetry(on_telemetry)
-    flight = Flight(args, CommandLink(args.drone_id, esp, build_command), poses, rec, stop, camera_age,
+    flight = flight_class(args, CommandLink(args.drone_id, esp, build_command), poses, rec, stop, camera_age,
                     (CommandPacket, CMD_START, CMD_GOTO, CMD_LAND))
     flight.nav_idle = nav_idle
+    # PROJECT ADDITION: fresh navigation state for trajectory start/end checks.
+    def nav_snapshot():
+        with state_lock:
+            return state['nav_time'], state['nav']
+    flight.nav_snapshot = nav_snapshot
     worker = None
     rx = tx = detector = None
     stream_target = None
@@ -292,7 +313,7 @@ def main():
         cv2.namedWindow(window, cv2.WINDOW_NORMAL)
         next_keepalive = 0.0
         view = np.zeros((480, 640, 3), dtype=np.uint8)
-        rec.event('PROGRAM_READY', model='Level-flight yaw-only conversion; approximate image/telemetry timing',
+        rec.event('PROGRAM_READY', method='trajectory' if trajectory_mode else 'waypoint', model='Level-flight yaw-only conversion; approximate image/telemetry timing',
                   tag_size_m=detector.tag_size_m, camera_pitch_deg=90,
                   camera_offset_m=args.camera_offset, image_rotation_deg=args.camera_rotation_deg)
         print('Camera starts automatically. Press M in its window when READY; Q/ESC aborts.')
