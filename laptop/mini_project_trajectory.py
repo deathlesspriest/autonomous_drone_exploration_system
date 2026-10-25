@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Method 2: Lab 5 CSV playback with Method 1 camera, localization and records.
 
-Run: python laptop/mini_project_trajectory.py --drone-id 2 --trajectory trajectory/cde1302_sweep_draft.csv
+Run: python laptop/mini_project_trajectory.py --drone-id 2 --trajectory trajectory/mini_project_trajectory_test.csv
 Camera starts automatically. Press M when READY. No separate flight/viewer script.
 """
 # PROJECT ADDITION: this entire file is new; upstream flight code stays unchanged.

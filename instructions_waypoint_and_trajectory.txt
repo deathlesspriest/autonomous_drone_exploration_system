@@ -1,0 +1,403 @@
+CDE1302 MINI PROJECT
+WAYPOINT AND TRAJECTORY MISSION INSTRUCTIONS
+
+Use the section for the method you want to run. Run only one mission at a time.
+These instructions describe the integrated programs with automatic camera
+startup, AprilTag localization and mission recording.
+
+On the integrated simple_trajectory_method branch, both methods are available:
+Method 1 runs mini_project_mission.py; Method 2 runs mini_project_trajectory.py.
+The command selects the method; you do not need to switch branches between runs.
+The simple_waypoint_method branch contains Method 1 only. Its full sweep file
+is named waypoints/cde1302_sweep_1.txt. On that branch, use:
+python laptop/mini_project_mission.py --drone-id 2 --waypoints-file waypoints/cde1302_sweep_1.txt
+
+The commands in the two sections below use simple_trajectory_method.
+Despite their names, mini_project_waypoint_test.txt and
+mini_project_trajectory_test.csv contain the full six-pass draft, not the short
+three-goal route. waypoints/method1_test.txt is the short route.
+
+Use your actual repository path in the cd command below. Use cd /d if switching
+drives. Both draft routes require confirmation of assessment-area coverage.
+
+==========================================================================
+METHOD 1: WAYPOINT SEARCH WITH APRILTAG LOCALIZATION
+
+1. Project files
+
+laptop/mini_project_mission.py
+Main program: camera startup, detection, takeoff, waypoint flight, tag
+localization, recording and landing commands.
+
+laptop/mini_project_support.py
+Coordinate-conversion functions, telemetry history, home-position checks
+and file recording. Imported automatically by the main program.
+
+waypoints/mini_project_waypoint_test.txt
+Six-pass search route containing x,y waypoint coordinates in metres,
+ending at home (0,0). Verify local axes, home origin and camera coverage
+before using the draft route for the assessment.
+
+Keep the original GitHub camera, detector, communication and protocol files.
+There is no need to run a separate camera script or root launcher.
+
+2. Mission execution
+
+Step 1: Prepare the system
+
+Follow the normal Lab 5 power, network and preflight procedure.
+Use your assigned drone ID and the corresponding laptop/ESP32 IP settings.
+Close other camera viewers and flight scripts.
+The environment must have the packages in laptop/requirements.txt. On Windows,
+the native AprilTag detector also needs MinGW-w64 gcc on its first build:
+conda install -c conda-forge gcc
+Skip installation if the detector already builds and opens successfully.
+Keep laptop/apriltag_host_shim.c and components/esp-apriltag/apriltag/ in the repo.
+The supplied detector recognizes tag16h5 IDs 0-21; confirm the assessment tags
+use this family and supported IDs.
+
+The configured camera points straight down. Image top is assumed to point
+forward on the drone. Tag size is 0.12 m and lens offset is 0.02 m forward.
+Localization assumes approximately level flight. Verify that a known tag's
+reported local coordinates match its measured position. Camera intrinsics are
+those of the original 320x240 stream; lens calibration, tilt and timing affect
+accuracy. A six-pass route alone is not proof of full visual coverage.
+
+Step 2: Open Anaconda Prompt
+
+Enter the repository folder and activate the existing environment:
+
+cd "C:\autonomous_drone_exploration_system(GitHub-repo)"
+conda activate cde1302-laptop
+
+Step 3: Run the integrated waypoint mission
+
+Replace 2 with your assigned drone ID.
+
+Recommended command (explicitly selects the sweep file):
+
+python laptop/mini_project_mission.py --drone-id 2 --waypoints-file waypoints/mini_project_waypoint_test.txt
+
+Alternatively, after applying the corrected default, use:
+
+python laptop/mini_project_mission.py --drone-id 2
+
+Run ONE of these commands, not both. Do not type "or" between commands.
+
+Expected behaviour:
+- The camera window opens automatically.
+- The program receives video and drone telemetry.
+- The terminal displays the location of the new mission log folder.
+- The camera window shows READY when the input checks pass.
+
+READY checks video, telemetry, matching ESP IP and proximity to home.
+It does not verify physical clearance or complete search coverage.
+
+Step 4: Start and observe the mission
+
+Once flight checks are complete, click the camera window and press M once.
+This replaces Lab 5's MISSION-[ID] console confirmation.
+
+Expected sequence:
+- Send CMD_START and record the takeoff-command timestamp.
+- Wait 10 seconds while monitoring camera/telemetry availability.
+- Send each waypoint and check arrival (40-second timeout per waypoint).
+- Detect tags, estimate their local positions and record observations.
+- Return to (0,0) and verify position within 0.25 m of home.
+- Display/save the tag summary and send CMD_LAND.
+
+The takeoff wait is timed; it does not confirm altitude has been reached.
+
+Expected event names in the terminal include:
+TAKEOFF_COMMAND_SENT
+WAYPOINT_COMMAND
+WAYPOINT_REACHED
+TAG_DETECTED
+HOME_POSITION_VERIFIED
+TAG_SUMMARY
+LAND_COMMAND_SENT
+
+TAG_DETECTED appears only when a valid localized detection is recorded.
+The camera window shows tag IDs and drone-relative positions. The terminal
+shows timestamped events and calculated local x,y tag coordinates.
+
+Step 5: Observe landing
+
+In QGroundControl and by observation, confirm:
+- The UAV begins a controlled descent.
+- The UAV touches down in the starting area.
+- The motors stop.
+- PX4 reports Disarmed.
+
+The program records the landing command but does not verify touchdown.
+Program exit or LAND_COMMAND_SENT is not proof of mission completion.
+
+If a waypoint times out, the program aborts rather than skipping it.
+Q/ESC in the camera window requests an abort and, after takeoff initiation,
+an in-place landing attempt. Recovery depends on the command link; use the
+normal lab emergency procedure when necessary.
+
+3. Outputs and access
+
+Step 6: Open the mission results
+
+Each run automatically creates a folder inside your repository:
+
+mission_logs/mission_DATE_TIME/
+
+Open File Explorer, enter the repository folder, open mission_logs, then
+open the folder matching your run's date and time.
+
+Camera window
+Contents: Tag IDs and drone-relative positions.
+Access: Appears automatically while the program runs.
+
+Terminal
+Contents: Timestamped mission events and calculated tag local coordinates.
+Access: Anaconda Prompt used to run the program.
+
+tag_summary.csv
+Contents: One median local (x,y) per located tag, with observation count.
+Access: Open in Excel. This is the main file for final tag results.
+Columns: tag_id, local_x_m, local_y_m, observations.
+
+detections.csv
+Contents: Individual detections: ID, local position, relative pose,
+timestamps and quality information.
+Access: Open in Excel.
+
+events.csv
+Contents: Takeoff, detections, waypoint progress, landing commands and failures.
+Access: Open in Excel.
+
+events.jsonl
+Contents: Structured version of the event records, one JSON object per line.
+Access: Open in a text/code editor.
+
+Coordinates are in metres. A tag without a valid location estimate is
+recorded as TAG_ID_ONLY in the event records, rather than assigned invented
+coordinates. Such an observation is not a localized entry in tag_summary.csv.
+The summary uses medians of recorded positions; this does not guarantee accuracy.
+
+Step 7: Preserve report evidence
+
+Keep the complete mission log folder. Download the matching PX4 .ulg using
+the Lab 5/QGroundControl procedure for flight reconstruction in the report.
+The Python CSV records supplement, and do not replace, the PX4 flight log.
+
+Step 8: Complete the post-flight assessment work
+
+Using the matching PX4 .ulg and this run's AprilTag records, produce a 2D or 3D
+plot of the ACTUAL full flight path, starting and landing positions, and tag
+positions labelled by ID. Confirm both sources use the same local coordinate
+frame; check estimator resets before combining them. A plot of the planned
+waypoints or trajectory alone does not satisfy flight reconstruction.
+
+Record actual mission completion after exploration, tag reporting and landing
+inside the starting area. LAND_COMMAND_SENT is not that completion time.
+Use the observed/flight-log landing time and the recorded takeoff-command time;
+account for clock alignment if using separate clocks.
+
+Include the plot, measured performance, system explanation, limitations and AI
+usage/verification in the group report. The report is at most 10 pages including
+cover and appendix (excluding source code), single-column, single-spaced,
+Times New Roman at least 12 pt. Include the GitHub link and submit within 48 hours
+after the demonstration. Actual flight data is required to finish this step.
+
+==========================================================================
+
+METHOD 2: TRAJECTORY SEARCH WITH APRILTAG LOCALIZATION
+
+1. Project files
+
+laptop/mini_project_trajectory.py
+Main program for Method 2: reuses the shared camera, detection and recording
+code, uploads the trajectory, starts playback and checks return to home.
+
+laptop/mini_project_mission.py
+Shared camera startup, detection, takeoff, tag localization and landing code.
+Imported automatically by Method 2. Running this file directly selects Method 1.
+
+laptop/mini_project_support.py
+Coordinate-conversion functions, telemetry history, home-position checks
+and file recording. Imported automatically by the mission programs.
+
+trajectory/mini_project_trajectory_test.csv
+Six-pass search route containing t,x,y,z samples: time in seconds and position
+in metres. Uses the same planned search path as Method 1 and returns to its
+start. Playback lasts 190.4 seconds, excluding takeoff, upload and landing.
+The running program follows this prepared file; it does not generate a route.
+Verify local axes, home origin and camera coverage before the assessment.
+
+Keep the original GitHub camera, detector, communication and protocol files.
+There is no need to run a separate camera script or root launcher.
+
+2. Mission execution
+
+Step 1: Prepare the system
+
+Follow the normal Lab 5 power, network and preflight procedure.
+Use your assigned drone ID and the corresponding laptop/ESP32 IP settings.
+Close other camera viewers and flight scripts.
+The environment must have the packages in laptop/requirements.txt. On Windows,
+the native AprilTag detector also needs MinGW-w64 gcc on its first build:
+conda install -c conda-forge gcc
+Skip installation if the detector already builds and opens successfully.
+Keep laptop/apriltag_host_shim.c and components/esp-apriltag/apriltag/ in the repo.
+The supplied detector recognizes tag16h5 IDs 0-21; confirm the assessment tags
+use this family and supported IDs.
+
+The configured camera points straight down. Image top is assumed to point
+forward on the drone. Tag size is 0.12 m and lens offset is 0.02 m forward.
+Localization assumes approximately level flight. Verify that a known tag's
+reported local coordinates match its measured position. Camera intrinsics are
+those of the original 320x240 stream; lens calibration, tilt and timing affect
+accuracy. A six-pass route alone is not proof of full visual coverage.
+
+Step 2: Open Anaconda Prompt
+
+Enter the repository folder and activate the existing environment:
+
+cd "C:\autonomous_drone_exploration_system(GitHub-repo)"
+conda activate cde1302-laptop
+
+Step 3: Run the integrated trajectory mission
+
+Replace 2 with your assigned drone ID.
+
+Recommended command (explicitly selects the sweep file):
+
+python laptop/mini_project_trajectory.py --drone-id 2 --trajectory trajectory/mini_project_trajectory_test.csv
+
+Alternatively, after applying the corrected default, use:
+
+python laptop/mini_project_trajectory.py --drone-id 2
+
+Run ONE of these commands, not both. Do not type "or" between commands.
+
+Expected behaviour:
+- The camera window opens automatically.
+- The program receives video and drone telemetry.
+- The terminal displays the location of the new mission log folder.
+- The camera window shows READY when the input checks pass.
+
+READY checks video, telemetry, matching ESP IP and proximity to home.
+It does not verify physical clearance or complete search coverage.
+
+Step 4: Start and observe the mission
+
+Once flight checks are complete, click the camera window and press M once.
+This replaces Lab 5's MISSION-[ID] console confirmation.
+
+Expected sequence:
+- Send CMD_START and record the takeoff-command timestamp.
+- Wait 10 seconds while monitoring camera/telemetry availability.
+- Require a fresh hover position within 0.05 m of home before upload.
+- Upload the complete trajectory twice, then start playback once.
+- Detect tags, estimate their local positions and record observations.
+- Monitor trajectory playback and confirm it finishes.
+- Verify fresh position stays within 0.25 m of home for one second.
+- Display/save the tag summary and send CMD_LAND.
+
+The takeoff wait is timed; it does not confirm altitude has been reached.
+CSV positions are offsets from the hover position when playback begins.
+Motion uses local axes while heading is held at the playback-start heading.
+z=0 means maintain the playback-start altitude, not descend to ground level.
+The script aborts if the required starting hover or upload stability checks fail.
+
+Expected event names in the terminal include:
+TAKEOFF_COMMAND_SENT
+TRAJECTORY_START_COMMAND_SENT
+TAG_DETECTED
+TRAJECTORY_PLAYBACK_FINISHED
+HOME_POSITION_VERIFIED
+TAG_SUMMARY
+LAND_COMMAND_SENT
+
+TAG_DETECTED appears only when a valid localized detection is recorded.
+The camera window shows tag IDs and drone-relative positions. The terminal
+shows timestamped events and calculated local x,y tag coordinates.
+
+Step 5: Observe landing
+
+In QGroundControl and by observation, confirm:
+- The UAV begins a controlled descent.
+- The UAV touches down in the starting area.
+- The motors stop.
+- PX4 reports Disarmed.
+
+The program records the landing command but does not verify touchdown.
+Program exit or LAND_COMMAND_SENT is not proof of mission completion.
+
+If playback times out, is interrupted, or home return fails, the program
+aborts and attempts landing in place.
+Q/ESC in the camera window requests an abort and, after takeoff initiation,
+an in-place landing attempt. Recovery depends on the command link; use the
+normal lab emergency procedure when necessary.
+
+3. Outputs and access
+
+Step 6: Open the mission results
+
+Each run automatically creates a folder inside your repository:
+
+mission_logs/mission_DATE_TIME/
+
+Open File Explorer, enter the repository folder, open mission_logs, then
+open the folder matching your run's date and time.
+
+Camera window
+Contents: Tag IDs and drone-relative positions.
+Access: Appears automatically while the program runs.
+
+Terminal
+Contents: Timestamped mission events and calculated tag local coordinates.
+Access: Anaconda Prompt used to run the program.
+
+tag_summary.csv
+Contents: One median local (x,y) per located tag, with observation count.
+Access: Open in Excel. This is the main file for final tag results.
+Columns: tag_id, local_x_m, local_y_m, observations.
+
+detections.csv
+Contents: Individual detections: ID, local position, relative pose,
+timestamps and quality information.
+Access: Open in Excel.
+
+events.csv
+Contents: Takeoff, detections, trajectory progress, landing commands and failures.
+Access: Open in Excel.
+
+events.jsonl
+Contents: Structured version of the event records, one JSON object per line.
+Access: Open in a text/code editor.
+
+Coordinates are in metres. A tag without a valid location estimate is
+recorded as TAG_ID_ONLY in the event records, rather than assigned invented
+coordinates. Such an observation is not a localized entry in tag_summary.csv.
+The summary uses medians of recorded positions; this does not guarantee accuracy.
+
+Step 7: Preserve report evidence
+
+Keep the complete mission log folder. Download the matching PX4 .ulg using
+the Lab 5/QGroundControl procedure for flight reconstruction in the report.
+The Python CSV records supplement, and do not replace, the PX4 flight log.
+
+Step 8: Complete the post-flight assessment work
+
+Using the matching PX4 .ulg and this run's AprilTag records, produce a 2D or 3D
+plot of the ACTUAL full flight path, starting and landing positions, and tag
+positions labelled by ID. Confirm both sources use the same local coordinate
+frame; check estimator resets before combining them. A plot of the planned
+waypoints or trajectory alone does not satisfy flight reconstruction.
+
+Record actual mission completion after exploration, tag reporting and landing
+inside the starting area. LAND_COMMAND_SENT is not that completion time.
+Use the observed/flight-log landing time and the recorded takeoff-command time;
+account for clock alignment if using separate clocks.
+
+Include the plot, measured performance, system explanation, limitations and AI
+usage/verification in the group report. The report is at most 10 pages including
+cover and appendix (excluding source code), single-column, single-spaced,
+Times New Roman at least 12 pt. Include the GitHub link and submit within 48 hours
+after the demonstration. Actual flight data is required to finish this step.

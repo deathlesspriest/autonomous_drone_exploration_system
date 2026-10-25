@@ -211,10 +211,10 @@ def main(flight_class=Flight, trajectory_mode=False):
     ap.add_argument('--esp-ip')
     # PROJECT ADDITION: separate entry points share the same camera and records.
     if trajectory_mode:
-        ap.add_argument('--trajectory', type=Path, default=ROOT/'trajectory/cde1302_sweep_draft.csv')
+        ap.add_argument('--trajectory', type=Path, default=ROOT/'trajectory/mini_project_trajectory_test.csv')
         ap.add_argument('--dt', type=float, default=0.1)
     else:
-        ap.add_argument('--waypoints-file', type=Path, default=ROOT/'waypoints/cde1302_sweep_draft.txt')
+        ap.add_argument('--waypoints-file', type=Path, default=ROOT/'waypoints/mini_project_waypoint_test.txt')
     # CHANGED FROM GITHUB: 40 s per goal instead of the upstream default 25 s.
     ap.add_argument('--arrival-timeout', type=float, default=40.0)
     # PROJECT ADDITION: record location and measured downward-camera mounting.
