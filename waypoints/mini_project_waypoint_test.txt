@@ -1,31 +1,22 @@
-# PROJECT ADDITION: this entire route is new; it is not an upstream example.
-# CDE1302 search sweep - DRAFT FOR AXIS AND COVERAGE VERIFICATION
-# Units: metres. Home: (0,0).
-# ASSUMPTION: PX4 +x points from launch toward the search area (right on PDF).
-# ASSUMPTION: PX4 +y points toward the bottom of the PDF.
-# The PDF does NOT confirm these PX4 axis directions. Verify before flight.
-# Derived search rectangle: x=0.90..4.50, y=-1.80..1.35.
-# Assumes home is the centre of the 0.90 m launching square.
-# Six scan lanes: y=-1.50,-0.90,-0.30,0.30,0.90,1.20.
-# Nominal maximum lane spacing: 0.60 m. Camera coverage remains unverified.
-# Travel along the left approach corridor, then sweep, then return via corridor.
-# Do not use --map-frame with this file.
-# See README.txt and sweep_route.png for assumptions and stock-script limitations.
-# PROJECT ADDITION: approach corridor from home to the first scan lane.
-0.60,0.00
-0.60,-1.50
-# PROJECT ADDITION: alternate right/left passes across six scan lanes.
-4.15,-1.50
-4.15,-0.90
-0.60,-0.90
-0.60,-0.30
-4.15,-0.30
-4.15,0.30
-0.60,0.30
-0.60,0.90
-4.15,0.90
-4.15,1.20
-0.60,1.20
-# PROJECT ADDITION: return through the corridor to the home waypoint.
-0.60,0.00
+# Method 1: room width 3.4 m, depth 3.0 m.
+# Home (0,0): centre of back edge.
+# ASSUMED PX4 local axes: +x forward into room, +y right.
+# Room limits: x=0..3.0, y=-1.7..1.7.
+# Planned scan: x=0.4..2.6, y=-1.2..1.2 (0.6 m lane spacing).
+# Reference points keep >=0.4 m from walls, except home at back edge.
+# Clearance must also accommodate drone size and tracking error.
+# Camera coverage and actual local axes require physical verification.
+# Coordinates in metres. Final point returns to home.
+0.40,0.00
+0.40,-1.20
+2.60,-1.20
+2.60,-0.60
+0.40,-0.60
+0.40,0.00
+2.60,0.00
+2.60,0.60
+0.40,0.60
+0.40,1.20
+2.60,1.20
+2.60,0.00
 0.00,0.00
