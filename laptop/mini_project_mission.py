@@ -163,18 +163,28 @@ class Flight:
             self.goto(x, y, i)
             self.pause(0.5)
 
+    def prepare_takeoff(self):
+        pass
+
+    def wait_takeoff(self):
+        self.pause(getattr(self.args, 'takeoff_wait', 10.0))
+
+    def ready_extra(self):
+        return True, ''
+
     def run(self, route):
         try:
             p = self.healthy()
             require_home(p, time.monotonic())
             # PROJECT ADDITION: save the takeoff event and begin elapsed-time recording.
+            self.prepare_takeoff()
             self.rec.start()
             # Set before send: an exception after a UDP send may leave outcome uncertain.
             self.started.set()
             self.send(self.Command(self.START))
             self.rec.event('TAKEOFF_COMMAND_SENT')
             self.collecting.set()
-            self.pause(getattr(self.args, 'takeoff_wait', 10.0))  # same timed takeoff wait as course script; not altitude feedback
+            self.wait_takeoff()
             self.follow_route(route)  # PROJECT ADDITION: Method 2 overrides only motion.
             # CHANGED FROM GITHUB: do not call a timed-out home waypoint a successful return.
             require_home(self.healthy(), time.monotonic())
@@ -211,8 +221,10 @@ def main(flight_class=Flight, trajectory_mode=False):
     ap.add_argument('--esp-ip')
     # PROJECT ADDITION: separate entry points share the same camera and records.
     if trajectory_mode:
-        ap.add_argument('--trajectory', type=Path, default=ROOT/'trajectory/mini_project_trajectory_test.csv')
+        ap.add_argument('--trajectory', type=Path, default=ROOT/'trajectory/trajectory_room_2x2.csv')
         ap.add_argument('--dt', type=float, default=0.1)
+        ap.add_argument('--mavlink-port', type=int, default=14551)
+        ap.add_argument('--px4-system-id', type=int, default=1)
     else:
         ap.add_argument('--waypoints-file', type=Path, default=ROOT/'waypoints/mini_project_waypoint_test.txt')
     # CHANGED FROM GITHUB: 40 s per goal instead of the upstream default 25 s.
@@ -230,6 +242,8 @@ def main(flight_class=Flight, trajectory_mode=False):
         ap.error('Arrival timeout must be finite and positive')
     if not all(math.isfinite(v) for v in [args.tag_size_m,args.takeoff_wait,args.camera_rotation_deg,*args.camera_offset]) or args.tag_size_m<=0 or args.takeoff_wait<=0:
         ap.error('Camera values must be finite; tag size and takeoff wait must be positive')
+    if trajectory_mode and (not 1 <= args.mavlink_port <= 65535 or not 1 <= args.px4_system_id <= 255):
+        ap.error('Invalid MAVLink port or PX4 system ID')
     route = flight_class.load_trajectory(args) if trajectory_mode else load_route(args.waypoints_file)
     args.esp_ip = args.esp_ip or f'192.168.1.{200+args.drone_id}'
     print(f"Method {'2 trajectory' if trajectory_mode else '1 waypoint'}; home=(0,0); ESP={args.esp_ip}")
@@ -254,8 +268,9 @@ def main(flight_class=Flight, trajectory_mode=False):
 
     # PROJECT ADDITION: resolve one camera/command endpoint and allocate run records.
     esp = socket.gethostbyname(args.esp_ip)
-    rec = Recorder(args.log_dir)
-    print(f'Logs: {rec.directory}')
+    rec = Recorder(args.log_dir.resolve())
+    print(f'LOG FOLDER (absolute): {rec.directory.resolve()}', flush=True)
+    print('events.csv, events.jsonl and detections.csv are created before takeoff.', flush=True)
     poses, stop = PoseHistory(), threading.Event()
     state_lock = threading.Lock()
     state = dict(camera_time=0.0, nav=None, nav_time=0.0, source=None)
@@ -292,9 +307,15 @@ def main(flight_class=Flight, trajectory_mode=False):
             return state['nav_time'], state['nav']
     flight.nav_snapshot = nav_snapshot
     worker = None
-    rx = tx = detector = None
+    rx = tx = detector = altitude = None
     stream_target = None
     try:
+        if trajectory_mode:
+            from mini_project_altitude import AltitudeMonitor
+            altitude = AltitudeMonitor(args.mavlink_port, args.px4_system_id)
+            flight.altitude_monitor = altitude
+            altitude.start()
+            print(f'QGC forwarding required: 127.0.0.1:{args.mavlink_port}; only this drone connected.', flush=True)
         stream_target = (esp, 5006)
         # REUSED FROM GITHUB: same detector, camera port, assembler and keepalive packet.
         detector = Detector(tag_size_m=args.tag_size_m)
@@ -312,6 +333,7 @@ def main(flight_class=Flight, trajectory_mode=False):
         window = 'CDE1302 mission: M start, Q/ESC abort'
         cv2.namedWindow(window, cv2.WINDOW_NORMAL)
         next_keepalive = 0.0
+        previous_wait_reason = None
         view = np.zeros((480, 640, 3), dtype=np.uint8)
         rec.event('PROGRAM_READY', method='trajectory' if trajectory_mode else 'waypoint', model='Level-flight yaw-only conversion; approximate image/telemetry timing',
                   tag_size_m=detector.tag_size_m, camera_pitch_deg=90,
@@ -382,8 +404,15 @@ def main(flight_class=Flight, trajectory_mode=False):
                 matching_ip = state['source'] == esp
             ready = (p is not None and time.monotonic()-p.received_at < 0.5
                      and math.hypot(p.x,p.y) <= 0.25 and camera_age() < 0.5 and matching_ip)
+            extra_ready, extra_reason = flight.ready_extra()
+            ready = ready and extra_ready
+            wait_reason = extra_reason if not extra_ready else ('video/telemetry/home check' if not ready else 'READY')
+            if worker is None and wait_reason != previous_wait_reason:
+                print(f'START STATUS: {wait_reason}', flush=True)
+                previous_wait_reason = wait_reason
             label = ('MISSION ACTIVE - Q/ESC abort' if worker else
                      'READY - press M to take off' if ready else
+                     ('WAIT: ' + extra_reason) if not extra_ready else
                      'WAIT: video + telemetry + home (0,0) + matching ESP IP')
             display = view.copy()
             cv2.putText(display, label, (8,465), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0,255,255), 1)
@@ -395,7 +424,7 @@ def main(flight_class=Flight, trajectory_mode=False):
             # CHANGED FROM GITHUB: M in the camera window replaces the console MISSION-ID prompt.
             if key in (ord('m'), ord('M')) and worker is None:
                 if not ready:
-                    print('Not ready: check video, fresh telemetry, ESP IP and home coordinates.', flush=True)
+                    print('Not ready: ' + (extra_reason or 'check video, fresh telemetry, ESP IP and home coordinates.'), flush=True)
                 else:
                     worker = threading.Thread(target=flight.run, args=(route,), daemon=False)
                     worker.start()
@@ -427,6 +456,8 @@ def main(flight_class=Flight, trajectory_mode=False):
             rx.close()
         if detector is not None:
             detector.close()
+        if altitude is not None:
+            altitude.close()
         comms.stop()
         cv2.destroyAllWindows()
         rec.summary()
@@ -434,6 +465,7 @@ def main(flight_class=Flight, trajectory_mode=False):
         rec.event('PROGRAM_EXIT', normal_home_landing_requested=flight.normal_return,
                   touchdown_verified=False, note='Check actual touchdown/disarm in QGC. This is not a mission-finish timestamp.')
         rec.close()
+        print(f"RESULTS SAVED: {rec.directory.resolve()}", flush=True)
     return flight.exit_code if worker else 1
 
 

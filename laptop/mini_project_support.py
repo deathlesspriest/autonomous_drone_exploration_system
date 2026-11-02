@@ -109,6 +109,9 @@ class Recorder:
             'capture_est_mono_s', 'pose_received_mono_s', 'pose_time_error_s',
             'processing_ms', 'hamming', 'decision_margin', 'pose_err'])
         self._dw.writeheader()
+        self._events.flush()
+        self._detections.flush()
+        print(f'RECORDING TO: {self.directory.resolve()}', flush=True)
 
     # PROJECT ADDITION: start elapsed timing immediately before the takeoff send attempt.
     def start(self):
