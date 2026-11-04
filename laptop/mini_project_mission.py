@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """CDE1302 sweep + live tag localization. New code; course files stay unchanged.
 
-Run from repository root: python laptop/mini_project_mission.py --drone-id 2
+Run from repository root: python laptop/mini_project_trajectory.py --drone-id 8
 Press M in the camera window only when READY and preflight checks are complete.
 ESC/Q/Ctrl+C requests an abort; software recovery requires a working command link.
 """
@@ -222,9 +222,9 @@ def main(flight_class=Flight, trajectory_mode=False):
     # PROJECT ADDITION: separate entry points share the same camera and records.
     if trajectory_mode:
         ap.add_argument('--trajectory', type=Path, default=ROOT/'trajectory/trajectory_room_2x2.csv')
-        ap.add_argument('--dt', type=float, default=0.1)
-        ap.add_argument('--mavlink-port', type=int, default=14551)
-        ap.add_argument('--px4-system-id', type=int, default=1)
+        ap.add_argument('--dt', type=float, default=0.05)
+        ap.add_argument('--config', default=str(Path(__file__).with_name('setup.yaml')))
+        ap.add_argument('--max-speed', type=float, default=0.30)
     else:
         ap.add_argument('--waypoints-file', type=Path, default=ROOT/'waypoints/mini_project_waypoint_test.txt')
     # CHANGED FROM GITHUB: 40 s per goal instead of the upstream default 25 s.
@@ -234,7 +234,7 @@ def main(flight_class=Flight, trajectory_mode=False):
     ap.add_argument('--tag-size-m', type=float, default=0.12)
     ap.add_argument('--camera-offset', type=float, nargs=3, default=(0.02,0.0,0.0), metavar=('FORWARD','RIGHT','DOWN'))
     ap.add_argument('--camera-rotation-deg', type=float, default=0.0)
-    ap.add_argument('--takeoff-wait', type=float, default=10.0)
+    ap.add_argument('--takeoff-wait', type=float, default=8.0 if trajectory_mode else 10.0)
     args = ap.parse_args()
     if not 0 <= args.drone_id <= 54:
         ap.error('Drone ID must be 0..54 for the lab IP convention')
@@ -242,8 +242,6 @@ def main(flight_class=Flight, trajectory_mode=False):
         ap.error('Arrival timeout must be finite and positive')
     if not all(math.isfinite(v) for v in [args.tag_size_m,args.takeoff_wait,args.camera_rotation_deg,*args.camera_offset]) or args.tag_size_m<=0 or args.takeoff_wait<=0:
         ap.error('Camera values must be finite; tag size and takeoff wait must be positive')
-    if trajectory_mode and (not 1 <= args.mavlink_port <= 65535 or not 1 <= args.px4_system_id <= 255):
-        ap.error('Invalid MAVLink port or PX4 system ID')
     route = flight_class.load_trajectory(args) if trajectory_mode else load_route(args.waypoints_file)
     args.esp_ip = args.esp_ip or f'192.168.1.{200+args.drone_id}'
     print(f"Method {'2 trajectory' if trajectory_mode else '1 waypoint'}; home=(0,0); ESP={args.esp_ip}")
@@ -294,11 +292,14 @@ def main(flight_class=Flight, trajectory_mode=False):
             return state['nav'] in (NAV_IDLE, NAV_ARRIVED)
 
     # REUSED FROM GITHUB: one telemetry receiver and the same zero-offset configuration.
-    # PROJECT ADDITION: flight sends use CommandLink so UDP errors propagate.
-    comms = CommsNode(listen_port=5005, cmd_port=5006, config_path=None)
-    comms.set_nav_tags([], {})  # zero map offset; does NOT reset PX4's local origin
+    # Lab 5 sweep uses the original CommsNode sender and IP discovery.
+    config = args.config if trajectory_mode and Path(args.config).exists() else None
+    comms = CommsNode(listen_port=5005, cmd_port=5006, config_path=config)
+    if not trajectory_mode:
+        comms.set_nav_tags([], {})
+    command_link = comms if trajectory_mode else CommandLink(args.drone_id, esp, build_command)
     comms.on_telemetry(on_telemetry)
-    flight = flight_class(args, CommandLink(args.drone_id, esp, build_command), poses, rec, stop, camera_age,
+    flight = flight_class(args, command_link, poses, rec, stop, camera_age,
                     (CommandPacket, CMD_START, CMD_GOTO, CMD_LAND))
     flight.nav_idle = nav_idle
     # PROJECT ADDITION: fresh navigation state for trajectory start/end checks.
@@ -310,12 +311,6 @@ def main(flight_class=Flight, trajectory_mode=False):
     rx = tx = detector = altitude = None
     stream_target = None
     try:
-        if trajectory_mode:
-            from mini_project_altitude import AltitudeMonitor
-            altitude = AltitudeMonitor(args.mavlink_port, args.px4_system_id)
-            flight.altitude_monitor = altitude
-            altitude.start()
-            print(f'QGC forwarding required: 127.0.0.1:{args.mavlink_port}; only this drone connected.', flush=True)
         stream_target = (esp, 5006)
         # REUSED FROM GITHUB: same detector, camera port, assembler and keepalive packet.
         detector = Detector(tag_size_m=args.tag_size_m)
@@ -330,7 +325,7 @@ def main(flight_class=Flight, trajectory_mode=False):
         start_stream = build_camera_stream_command(True, 0, 0)
         comms.start()
         # PROJECT ADDITION: one mission window provides READY/start/abort status.
-        window = 'CDE1302 mission: M start, Q/ESC abort'
+        window = 'Lab 5 sweep + tags: M start, Q/ESC abort'
         cv2.namedWindow(window, cv2.WINDOW_NORMAL)
         next_keepalive = 0.0
         previous_wait_reason = None
