@@ -3,6 +3,8 @@
 No firmware changes or MAVLink forwarding. Start with M in the camera window.
 """
 import math
+import csv
+from pathlib import Path
 import random
 import time
 import numpy as np
@@ -19,6 +21,24 @@ class Lab5Sweep(Flight):
         if not math.isfinite(args.max_speed) or not 0 < args.max_speed <= 0.30:
             raise ValueError('max-speed must be positive and no more than 0.30 m/s')
         dt = round(args.dt * 1000) / 1000
+        rows=[]
+        for line in Path(args.trajectory).read_text(encoding='utf-8-sig').splitlines():
+            line=line.split('#',1)[0].strip()
+            if not line:
+                continue
+            fields=next(csv.reader([line]))
+            if not rows and [v.strip().lower() for v in fields]==['t','x','y','z']:
+                continue
+            if len(fields)!=4:
+                raise ValueError('CSV requires four columns: t,x,y,z')
+            rows.append([float(v) for v in fields])
+        data=np.asarray(rows)
+        if len(rows)<2 or not np.isfinite(data).all():
+            raise ValueError('CSV requires at least two finite rows')
+        if abs(data[0,0])>1e-8 or np.linalg.norm(data[0,1:])>1e-8:
+            raise ValueError('CSV must begin at t=0 and zero offsets')
+        if abs(data[-1,0]/dt-round(data[-1,0]/dt))>1e-6:
+            raise ValueError('CSV end time must align with dt')
         pts = load_trajectory(str(args.trajectory), dt)
         if len(pts) < 2 or len(pts) > TRAJ_MAX_PTS or not np.isfinite(pts).all():
             raise ValueError('Invalid trajectory samples or ESP32 point limit exceeded')
@@ -95,14 +115,34 @@ class Lab5Sweep(Flight):
                 raise MissionAbort('Drone refused trajectory after Lab 5 upload retries')
             duration = (len(pts)-1)*dt_ms/1000
             self.rec.event('TRAJECTORY_PLAYING', duration_s=duration)
-            deadline = time.monotonic()+duration+10
+            playback_started = time.monotonic()
+            deadline = playback_started+duration+10
             while self.nav_snapshot()[1] == NAV_TRAJ and time.monotonic()<deadline:
                 p = self.healthy()
                 self.rec.event('FLIGHT_POSITION', x=p.x, y=p.y)
                 self.pause(1)
-            self.rec.event('TRAJECTORY_ENDED', nav_state=self.nav_snapshot()[1],
-                           note='Lab 5 end condition; full path/home/touchdown not verified')
-            self.land('LAB5_FINISH_LAND')
+            if self.nav_snapshot()[1] == NAV_TRAJ:
+                raise MissionAbort('Trajectory playback timeout')
+            if time.monotonic()-playback_started < duration-.2:
+                raise MissionAbort('Trajectory ended before its planned duration')
+            self.rec.event('TRAJECTORY_ENDED', nav_state=self.nav_snapshot()[1])
+            # Verify return AFTER playback; no tight pre-upload drift restrictions.
+            deadline = time.monotonic()+self.args.arrival_timeout
+            since = None
+            while time.monotonic()<deadline:
+                p = self.healthy()
+                if time.monotonic()-p.received_at < .5 and math.hypot(p.x,p.y)<=.25:
+                    since = time.monotonic() if since is None else since
+                    if time.monotonic()-since >= 1:
+                        break
+                else:
+                    since = None
+                self.pause(.05)
+            else:
+                raise MissionAbort('Trajectory ended but return to home was not verified')
+            self.rec.event('HOME_POSITION_VERIFIED', radius_m=.25)
+            self.land('NORMAL_HOME_RETURN')
+            self.normal_return = True
             self.exit_code=0
         except BaseException as exc:
             self.recovery_event('MISSION_ABORT', reason=str(exc))
