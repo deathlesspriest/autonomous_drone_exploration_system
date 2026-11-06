@@ -10,7 +10,7 @@ import time
 import numpy as np
 from mini_project_mission import Flight, main
 from mini_project_support import MissionAbort
-from send_trajectory import load_trajectory, UPLOAD_GAP_S
+from send_trajectory import load_trajectory
 from protocol import NAV_TRAJ, TRAJ_MAX_PTS, build_traj_packets, build_traj_start
 
 class Lab5Sweep(Flight):
@@ -74,12 +74,12 @@ class Lab5Sweep(Flight):
             self.healthy()
             time.sleep(min(.05, max(0, end-time.monotonic())))
 
-    def wait_nav(self, timeout):
+    def wait_nav(self, timeout, after):
         end = time.monotonic()+timeout
         while time.monotonic() < end:
             self.healthy()
             stamp, nav = self.nav_snapshot()
-            if time.monotonic()-stamp <= 3 and nav == NAV_TRAJ:
+            if stamp > after and time.monotonic()-stamp <= .5 and nav == NAV_TRAJ:
                 return True
             time.sleep(.05)
         return False
@@ -94,28 +94,42 @@ class Lab5Sweep(Flight):
                            note='Original Lab 5 timed takeoff; height is not verified')
             self.collecting.set()
             self.pause(self.args.takeoff_wait)
-            # Same Lab 5 packet builder, 25 ms upload gap, retries and start command.
+            # Upload twice BEFORE start, at 10 packets/s. Same ID fills lost chunks.
+            # Never re-upload after a start: an accepted start consumes the ID.
             dt_ms = round(self.args.dt*1000)
             traj_id = random.randint(1,255)
             packets = build_traj_packets(traj_id, pts)
             start = build_traj_start(traj_id, dt_ms)
-            for attempt in range(1,6):
-                self.rec.event('TRAJECTORY_UPLOAD', attempt=attempt)
+            if self.nav_snapshot()[1] == NAV_TRAJ:
+                raise MissionAbort('A trajectory is already active')
+            for upload_pass in (1,2):
+                self.rec.event('TRAJECTORY_UPLOAD', upload_pass=upload_pass,
+                               packet_count=len(packets), packet_gap_s=.10)
                 for packet in packets:
                     self.healthy()
                     if not self.comms.send_raw(self.args.drone_id, packet):
                         raise MissionAbort('Trajectory upload: drone IP unknown')
-                    self.pause(UPLOAD_GAP_S)
+                    self.pause(.10)
+            first_start = time.monotonic()
+            for attempt in range(1,4):
+                # Same start ID only: upstream firmware consumes it on acceptance.
+                # A repeated START therefore cannot restart completed playback.
                 if not self.comms.send_raw(self.args.drone_id, start):
                     raise MissionAbort('Trajectory start: drone IP unknown')
                 self.rec.event('TRAJECTORY_START_COMMAND_SENT', attempt=attempt)
-                if self.wait_nav(1.5):
+                if self.wait_nav(3.0, after=first_start):
                     break
+                stamp,nav = self.nav_snapshot()
+                self.rec.event('TRAJECTORY_CONFIRMATION_MISSING', attempt=attempt,
+                               nav_state=nav, telemetry_age_s=time.monotonic()-stamp,
+                               note='ESP telemetry does not report arm/mode/altitude/estimator validity')
             else:
-                raise MissionAbort('Drone refused trajectory after Lab 5 upload retries')
+                raise MissionAbort('No fresh NAV_TRAJ confirmation. Possible not-flying/Offboard, '
+                                   'incomplete upload or missing acknowledgement. Check ESP serial log; '
+                                   'this message does not prove a firmware refusal.')
             duration = (len(pts)-1)*dt_ms/1000
             self.rec.event('TRAJECTORY_PLAYING', duration_s=duration)
-            playback_started = time.monotonic()
+            playback_started = first_start
             deadline = playback_started+duration+10
             while self.nav_snapshot()[1] == NAV_TRAJ and time.monotonic()<deadline:
                 p = self.healthy()
