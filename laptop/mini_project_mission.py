@@ -221,10 +221,10 @@ def main(flight_class=Flight, trajectory_mode=False):
     ap.add_argument('--esp-ip')
     # PROJECT ADDITION: separate entry points share the same camera and records.
     if trajectory_mode:
-        ap.add_argument('--trajectory', type=Path, default=ROOT/'trajectory/trajectory_room_2x2.csv')
-        ap.add_argument('--dt', type=float, default=0.05)
+        ap.add_argument('--trajectory', type=Path, default=ROOT/'trajectory/trajectory_room_2p5x3p5.csv')
+        ap.add_argument('--dt', type=float, default=0.2)
         ap.add_argument('--config', default=str(Path(__file__).with_name('setup.yaml')))
-        ap.add_argument('--max-speed', type=float, default=0.30)
+        ap.add_argument('--max-speed', type=float, default=0.10)
     else:
         ap.add_argument('--waypoints-file', type=Path, default=ROOT/'waypoints/mini_project_waypoint_test.txt')
     # CHANGED FROM GITHUB: 40 s per goal instead of the upstream default 25 s.

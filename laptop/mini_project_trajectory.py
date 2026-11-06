@@ -46,9 +46,9 @@ class Lab5Sweep(Flight):
             raise ValueError('Trajectory exceeds speed limit')
         if np.max(np.abs(pts[:,2])) > 1e-6:
             raise ValueError('This sweep must hold takeoff height: z offsets must be zero')
-        if (pts[:,0].min() < -1e-6 or pts[:,0].max() > 1.5+1e-6
-                or np.abs(pts[:,1]).max() > .65+1e-6):
-            raise ValueError('Route exceeds the inset 2x2 test-room envelope')
+        if (pts[:,0].min() < -1e-6 or pts[:,0].max() > 3.0+1e-6
+                or np.abs(pts[:,1]).max() > .90+1e-6):
+            raise ValueError('Route exceeds the inset 2.5m-wide x 3.5m-long room envelope')
         if np.linalg.norm(pts[-1]) > 1e-6:
             raise ValueError('Sweep must end at its starting position')
         print(f'ROUTE: {len(pts)} points, {(len(pts)-1)*dt:.1f}s playback')
